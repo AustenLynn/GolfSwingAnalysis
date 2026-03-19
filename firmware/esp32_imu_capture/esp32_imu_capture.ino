@@ -47,7 +47,7 @@ class ServerCallbacks : public BLEServerCallbacks {
 
 class RxCallbacks : public BLECharacteristicCallbacks {
   void onWrite(BLECharacteristic *characteristic) override {
-    std::string value = characteristic->getValue();
+    std::string value = characteristic->getValue().c_str();
     if (!value.empty()) {
       Serial.print("# RX BLE: ");
       Serial.println(value.c_str());

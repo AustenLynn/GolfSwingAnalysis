@@ -44,7 +44,7 @@ async def run_capture(device_name):
     partial = ""
 
     base_dir = Path(__file__).resolve().parent.parent
-    output_dir = base_dir / "data" / "raw"
+    output_dir = base_dir / "data" / "raw" / "Suboptimal_Swings"
     output_dir.mkdir(parents=True, exist_ok=True)
     output_file = output_dir / f"swing_capture_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
 
@@ -93,10 +93,13 @@ async def run_capture(device_name):
         try:
             while True:
                 await asyncio.sleep(0.2)
-        except KeyboardInterrupt:
+        except (KeyboardInterrupt, asyncio.CancelledError):
             print("\nGuardando archivo...")
         finally:
-            await client.stop_notify(TX_CHAR_UUID)
+            try:
+                await client.stop_notify(TX_CHAR_UUID)
+            except Exception as e:
+                print(f"Advertencia al detener notificaciones: {e}")
 
     if rows:
         df = pd.DataFrame(rows, columns=EXPECTED_COLUMNS)

@@ -2,8 +2,12 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 from scipy.ndimage import gaussian_filter1d
+from pathlib import Path
 
-INPUT_FILE = "swing_capture_20260308_230920.csv"   # cámbialo
+BASE_DIR = Path(__file__).resolve().parent.parent
+RAW_DIR = BASE_DIR / "data" / "raw"
+PROCESSED_DIR = BASE_DIR / "data" / "processed"
+OUTPUT_FILE = PROCESSED_DIR / "swing_features.csv"
 
 START_THRESHOLD = 60.0   # deg/s, ajústalo
 END_THRESHOLD = 30.0     # deg/s, ajústalo
@@ -129,7 +133,15 @@ def plot_swings(df, swing_results):
     plt.show()
 
 def main():
-    df = pd.read_csv(INPUT_FILE)
+    capture_files = sorted(RAW_DIR.glob("swing_capture_*.csv"), key=lambda p: p.stat().st_mtime)
+    if not capture_files:
+        print(f"No hay archivos swing_capture_*.csv en: {RAW_DIR}")
+        return
+
+    input_file = capture_files[-1]
+    print(f"Analizando archivo: {input_file}")
+
+    df = pd.read_csv(input_file)
     df = compute_signals(df)
 
     swings = find_swings(df)
@@ -161,8 +173,9 @@ def main():
         "acc_peak"
     ]])
 
-    results_df.to_csv("swing_features.csv", index=False)
-    print("\nGuardado: swing_features.csv")
+    PROCESSED_DIR.mkdir(parents=True, exist_ok=True)
+    results_df.to_csv(OUTPUT_FILE, index=False)
+    print(f"\nGuardado: {OUTPUT_FILE}")
 
     plot_swings(df, results)
 

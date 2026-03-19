@@ -1,6 +1,10 @@
 #include <Wire.h>
 #include <MadgwickAHRS.h>
 #include <math.h>
+#include <BLEDevice.h>
+#include <BLEServer.h>
+#include <BLEUtils.h>
+#include <BLE2902.h>
 
 #define SDA_PIN 6
 #define SCL_PIN 5
@@ -9,6 +13,16 @@
 #define HMC5883L_ADDR  0x1E
 
 Madgwick filter;
+BLEServer *pServer = nullptr;
+BLECharacteristic *pTxCharacteristic = nullptr;
+BLECharacteristic *pRxCharacteristic = nullptr;
+bool deviceConnected = false;
+bool btReady = false;
+
+static const char *BLE_DEVICE_NAME = "ESP32_IMU_GOLF";
+static const char *SERVICE_UUID = "6e400001-b5a3-f393-e0a9-e50e24dcca9e";
+static const char *TX_CHAR_UUID = "6e400003-b5a3-f393-e0a9-e50e24dcca9e";
+static const char *RX_CHAR_UUID = "6e400002-b5a3-f393-e0a9-e50e24dcca9e";
 
 unsigned long lastMicros = 0;
 float sampleFreq = 100.0f;
@@ -16,6 +30,59 @@ float sampleFreq = 100.0f;
 float gx_offset = 0.0f;
 float gy_offset = 0.0f;
 float gz_offset = 0.0f;
+
+class ServerCallbacks : public BLEServerCallbacks {
+  void onConnect(BLEServer *server) override {
+    deviceConnected = true;
+    Serial.println("# BLE client conectado");
+  }
+
+  void onDisconnect(BLEServer *server) override {
+    deviceConnected = false;
+    Serial.println("# BLE client desconectado");
+    BLEDevice::startAdvertising();
+    Serial.println("# BLE advertising reiniciado");
+  }
+};
+
+class RxCallbacks : public BLECharacteristicCallbacks {
+  void onWrite(BLECharacteristic *characteristic) override {
+    std::string value = characteristic->getValue();
+    if (!value.empty()) {
+      Serial.print("# RX BLE: ");
+      Serial.println(value.c_str());
+    }
+  }
+};
+
+void bleNotifyLine(const String &msg) {
+  if (!btReady || !deviceConnected || pTxCharacteristic == nullptr) {
+    return;
+  }
+
+  String payload = msg + "\n";
+  const int chunkSize = 20;
+  int totalLen = payload.length();
+  int offset = 0;
+
+  while (offset < totalLen) {
+    int len = totalLen - offset;
+    if (len > chunkSize) {
+      len = chunkSize;
+    }
+
+    String chunk = payload.substring(offset, offset + len);
+    pTxCharacteristic->setValue((uint8_t *)chunk.c_str(), len);
+    pTxCharacteristic->notify();
+    offset += len;
+    delay(1);
+  }
+}
+
+void printlnBoth(const String &msg) {
+  Serial.println(msg);
+  bleNotifyLine(msg);
+}
 
 // -------------------------
 // I2C helpers
@@ -109,7 +176,7 @@ void readHMC5883L(float &mx, float &my, float &mz) {
 // Gyro calibration
 // -------------------------
 void calibrateGyro(int samples = 500) {
-  Serial.println("# Calibrando gyro. No muevas el sensor...");
+  printlnBoth("# Calibrando gyro. No muevas el sensor...");
   float sx = 0, sy = 0, sz = 0;
 
   for (int i = 0; i < samples; i++) {
@@ -125,15 +192,42 @@ void calibrateGyro(int samples = 500) {
   gy_offset = sy / samples;
   gz_offset = sz / samples;
 
-  Serial.print("# Offsets: ");
-  Serial.print(gx_offset); Serial.print(", ");
-  Serial.print(gy_offset); Serial.print(", ");
-  Serial.println(gz_offset);
+  String offsets = "# Offsets: " + String(gx_offset, 4) + ", " + String(gy_offset, 4) + ", " + String(gz_offset, 4);
+  printlnBoth(offsets);
 }
 
 void setup() {
   Serial.begin(115200);
   delay(1000);
+
+  BLEDevice::init(BLE_DEVICE_NAME);
+  pServer = BLEDevice::createServer();
+  pServer->setCallbacks(new ServerCallbacks());
+
+  BLEService *pService = pServer->createService(SERVICE_UUID);
+  pTxCharacteristic = pService->createCharacteristic(
+    TX_CHAR_UUID,
+    BLECharacteristic::PROPERTY_NOTIFY | BLECharacteristic::PROPERTY_READ
+  );
+  pTxCharacteristic->addDescriptor(new BLE2902());
+
+  pRxCharacteristic = pService->createCharacteristic(
+    RX_CHAR_UUID,
+    BLECharacteristic::PROPERTY_WRITE | BLECharacteristic::PROPERTY_WRITE_NR
+  );
+  pRxCharacteristic->setCallbacks(new RxCallbacks());
+
+  pService->start();
+
+  BLEAdvertising *pAdvertising = BLEDevice::getAdvertising();
+  pAdvertising->addServiceUUID(SERVICE_UUID);
+  pAdvertising->setScanResponse(true);
+  BLEDevice::startAdvertising();
+
+  btReady = true;
+  Serial.println("# BLE iniciado: ESP32_IMU_GOLF");
+  Serial.print("# Servicio UUID: ");
+  Serial.println(SERVICE_UUID);
 
   Wire.begin(SDA_PIN, SCL_PIN);
   Wire.setClock(100000);
@@ -152,7 +246,7 @@ void setup() {
   lastMicros = micros();
 
   // encabezado CSV
-  Serial.println("t_ms,ax,ay,az,gx,gy,gz,yaw,pitch,roll");
+  printlnBoth("t_ms,ax,ay,az,gx,gy,gz,yaw,pitch,roll");
 }
 
 void loop() {
@@ -186,16 +280,24 @@ void loop() {
 
   unsigned long t_ms = millis();
 
-  Serial.print(t_ms);   Serial.print(",");
-  Serial.print(ax, 4);  Serial.print(",");
-  Serial.print(ay, 4);  Serial.print(",");
-  Serial.print(az, 4);  Serial.print(",");
-  Serial.print(gx, 4);  Serial.print(",");
-  Serial.print(gy, 4);  Serial.print(",");
-  Serial.print(gz, 4);  Serial.print(",");
-  Serial.print(yaw, 2); Serial.print(",");
-  Serial.print(pitch, 2); Serial.print(",");
-  Serial.println(roll, 2);
+  char line[160];
+  snprintf(
+    line,
+    sizeof(line),
+    "%lu,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.2f,%.2f,%.2f",
+    t_ms,
+    ax,
+    ay,
+    az,
+    gx,
+    gy,
+    gz,
+    yaw,
+    pitch,
+    roll
+  );
+
+  printlnBoth(String(line));
 
   delay(10); // ~100 Hz
 }

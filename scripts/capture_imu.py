@@ -3,7 +3,7 @@ import pandas as pd
 from datetime import datetime
 import time
 
-PORT = "COM7"
+PORT = "COM5"
 BAUD = 115200
 OUTPUT_FILE = f"swing_capture_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
 

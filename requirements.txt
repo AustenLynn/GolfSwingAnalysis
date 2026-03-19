@@ -1,0 +1,6 @@
+pyserial
+pandas
+numpy
+matplotlib
+scipy
+bleak

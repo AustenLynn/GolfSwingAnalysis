@@ -1,0 +1,11 @@
+.git
+.gitignore
+golf_swing_analyzer/
+notebooks/
+firmware/
+data/raw/
+__pycache__
+*.pyc
+*.pyo
+*.pkl.bak
+README.md

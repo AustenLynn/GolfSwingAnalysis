@@ -1,0 +1,13 @@
+services:
+  api:
+    build: .
+    ports:
+      - "8000:8000"
+    volumes:
+      # Writable — so POST /retrain can save a new model
+      - ./models:/app/models
+      # Writable — swing history persists across restarts
+      # NOTE: this file must exist before first run. It is created automatically
+      # by running the backend once natively: python -m uvicorn api.main:app
+      - ./api/swing_history.db:/app/api/swing_history.db
+    restart: unless-stopped

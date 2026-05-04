@@ -17,27 +17,33 @@ class BleService {
 
   /// Scan for ESP32_IMU_GOLF and connect. Returns true on success.
   Future<bool> connectToDevice() async {
+    final completer = Completer<BluetoothDevice?>();
+
+    final sub = FlutterBluePlus.scanResults.listen((results) {
+      for (final r in results) {
+        if (r.device.platformName == BleConstants.deviceName &&
+            !completer.isCompleted) {
+          completer.complete(r.device);
+        }
+      }
+    });
+
     await FlutterBluePlus.startScan(
       timeout: const Duration(seconds: 10),
       withNames: [BleConstants.deviceName],
     );
 
-    BluetoothDevice? found;
-    await for (final results in FlutterBluePlus.scanResults) {
-      for (final r in results) {
-        if (r.device.platformName == BleConstants.deviceName) {
-          found = r.device;
-          break;
-        }
-      }
-      if (found != null) break;
-    }
+    final found = await completer.future
+        .timeout(const Duration(seconds: 12), onTimeout: () => null);
+
+    await sub.cancel();
     await FlutterBluePlus.stopScan();
 
     if (found == null) return false;
     _device = found;
 
     await _device!.connect(autoConnect: false);
+    await _device!.requestMtu(512);
     final services = await _device!.discoverServices();
 
     for (final svc in services) {

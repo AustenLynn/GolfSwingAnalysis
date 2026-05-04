@@ -222,6 +222,8 @@ void setup() {
   BLEAdvertising *pAdvertising = BLEDevice::getAdvertising();
   pAdvertising->addServiceUUID(SERVICE_UUID);
   pAdvertising->setScanResponse(true);
+  pAdvertising->setMinPreferred(0x06);  // helps Android compatibility
+  pAdvertising->setMaxPreferred(0x12);
   BLEDevice::startAdvertising();
 
   btReady = true;
